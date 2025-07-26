@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de BWT e FM-Index</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .control-panel label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+        .control-panel textarea, .control-panel input, .control-panel button {
+            transition: all 0.2s ease-in-out;
+        }
+        .mono {
+            font-family: 'Fira Code', monospace;
+        }
+        .highlight-f {
+            background-color: #90cdf4; /* blue-300 */
+        }
+        .highlight-l {
+            background-color: #a0f2d2; /* green-200 */
+        }
+        .highlight-pattern {
+            background-color: #fbd38d; /* orange-300 */
+        }
+        .table-cell {
+            padding: 0.5rem;
+            text-align: center;
+            border: 1px solid #e2e8f0; /* gray-200 */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Simulador Interativo de BWT e FM-Index</h1>
+            <p class="mt-2 text-lg text-gray-600">Visualize a construção da Transformada de Burrows-Wheeler e a busca com o FM-Index.</p>
+        </header>
+
+        <div class="flex flex-col lg:flex-row gap-8">
+
+            <!-- Painel de Controle -->
+            <div class="w-full lg:w-1/3 xl:w-1/4 bg-white p-6 rounded-xl shadow-lg control-panel self-start">
+                <h2 class="text-2xl font-semibold mb-6 border-b pb-3">Controles</h2>
+
+                <div class="space-y-6">
+                    <div>
+                        <label for="input-string" class="text-gray-700">Lista de Palavras (uma por linha)</label>
+                        <textarea id="input-string" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mono" rows="10">casa
+caso
+caos
+data
+gato
+testa
+teste
+dados
+seguro
+senha</textarea>
+                    </div>
+                     <div>
+                        <label for="search-pattern" class="text-gray-700">Padrão de Busca (P)</label>
+                        <input type="text" id="search-pattern" value="ca" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 mono">
+                    </div>
+                    <button id="run-btn" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-md">Construir e Buscar</button>
+                </div>
+                 <div id="results-panel" class="mt-8 pt-6 border-t">
+                    <h3 class="text-xl font-semibold mb-4">Resultados da Busca</h3>
+                    <div id="search-results-content" class="text-sm space-y-2 p-3 bg-gray-50 rounded-lg min-h-[80px]">
+                        <p>Aguardando execução...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Área de Visualização -->
+            <div id="visualization-area" class="w-full lg:w-2/3 xl:w-3/4 bg-white p-6 rounded-xl shadow-lg space-y-8">
+                <!-- Seção da Matriz BWT -->
+                <div>
+                    <h3 class="text-xl font-semibold mb-4">1. Matriz de Rotações e BWT</h3>
+                    <div id="bwt-matrix-vis" class="overflow-x-auto mono text-sm">
+                        <p class="text-gray-500">Insira as palavras e clique em "Construir e Buscar".</p>
+                    </div>
+                </div>
+
+                <!-- Seção do FM-Index -->
+                <div>
+                    <h3 class="text-xl font-semibold mb-4">2. Componentes do FM-Index</h3>
+                    <div id="fm-index-vis" class="grid grid-cols-1 md:grid-cols-2 gap-6 mono text-sm">
+                         <div id="c-table-vis">
+                            <h4 class="font-semibold mb-2">Tabela C (C-Table)</h4>
+                            <p class="text-gray-500">...</p>
+                         </div>
+                         <div id="occ-vis">
+                            <h4 class="font-semibold mb-2">Contagem (Occ)</h4>
+                            <p class="text-gray-500">...</p>
+                         </div>
+                    </div>
+                </div>
+                
+                <!-- Seção da Busca -->
+                <div>
+                    <h3 class="text-xl font-semibold mb-4">3. Passos da Busca Retroativa (Backward Search)</h3>
+                    <div id="search-steps-vis" class="overflow-x-auto mono text-sm">
+                       <p class="text-gray-500">...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- Elementos da UI ---
+            const inputStringEl = document.getElementById('input-string');
+            const searchPatternEl = document.getElementById('search-pattern');
+            const runBtn = document.getElementById('run-btn');
+            const bwtMatrixVis = document.getElementById('bwt-matrix-vis');
+            const cTableVis = document.getElementById('c-table-vis');
+            const occVis = document.getElementById('occ-vis');
+            const searchStepsVis = document.getElementById('search-steps-vis');
+            const searchResultsContent = document.getElementById('search-results-content');
+
+            // --- Lógica Principal ---
+
+            /**
+             * Constrói a Transformada de Burrows-Wheeler.
+             * @param {string} text O texto de entrada.
+             * @returns {object} Um objeto contendo a matriz ordenada, a string BWT (L) e o índice original.
+             */
+            function buildBWT(text) {
+                // O texto já chega com o terminador '$'
+                const len = text.length;
+                const rotations = [];
+
+                // 1. Gerar todas as rotações cíclicas
+                for (let i = 0; i < len; i++) {
+                    rotations.push(text.slice(i) + text.slice(0, i));
+                }
+
+                // 2. Ordenar as rotações lexicograficamente
+                const sortedRotations = [...rotations].sort();
+                
+                // 3. Extrair a última coluna (L)
+                const lColumn = sortedRotations.map(rot => rot[len - 1]).join('');
+                
+                // 4. Encontrar o índice da string original (primeira rotação)
+                const originalIndex = sortedRotations.indexOf(text);
+
+                return {
+                    sortedRotations,
+                    lColumn,
+                    originalIndex
+                };
+            }
+
+            /**
+             * Constrói os componentes do FM-Index.
+             * @param {string} fColumn A primeira coluna da matriz BWT (caracteres ordenados).
+             * @param {string} lColumn A última coluna da matriz BWT.
+             * @returns {object} Um objeto contendo a C-Table e a matriz Occ.
+             */
+            function buildFMIndex(fColumn, lColumn) {
+                const alphabet = [...new Set(fColumn)].sort();
+                const len = fColumn.length;
+
+                // 1. Construir a C-Table
+                const cTable = new Map();
+                alphabet.forEach(char => {
+                    cTable.set(char, fColumn.indexOf(char));
+                });
+
+                // 2. Construir a matriz de contagem (Occ)
+                const occ = new Map();
+                alphabet.forEach(char => occ.set(char, new Array(len + 1).fill(0)));
+
+                for (let i = 0; i < len; i++) {
+                    alphabet.forEach(char => {
+                        occ.get(char)[i + 1] = occ.get(char)[i];
+                    });
+                    if (occ.has(lColumn[i])) {
+                        occ.get(lColumn[i])[i + 1]++;
+                    }
+                }
+
+                return { cTable, occ };
+            }
+
+            /**
+             * Realiza a busca retroativa usando o FM-Index.
+             * @param {string} pattern O padrão a ser buscado.
+             * @param {string} lColumn A coluna L.
+             * @param {Map} cTable A tabela C.
+             * @param {Map} occ A matriz Occ.
+             * @returns {object} Um objeto com os passos da busca e o resultado.
+             */
+            function backwardSearch(pattern, lColumn, cTable, occ) {
+                let [start, end] = [0, lColumn.length];
+                const steps = [];
+
+                for (let i = pattern.length - 1; i >= 0; i--) {
+                    const char = pattern[i];
+                    const prevStart = start;
+                    const prevEnd = end;
+                    
+                    if (!cTable.has(char)) {
+                         steps.push({ char, prevStart, prevEnd, start: -1, end: -1, found: false });
+                         return { steps, result: { start: -1, end: -1 } }; // Caractere não existe no texto
+                    }
+
+                    start = cTable.get(char) + occ.get(char)[start];
+                    end = cTable.get(char) + occ.get(char)[end];
+                    
+                    steps.push({ char, prevStart, prevEnd, start, end, found: start < end });
+                    if (start >= end) break;
+                }
+                 return { steps, result: { start, end } };
+            }
+
+            // --- Funções de Visualização ---
+
+            function renderBWTMatrix(data) {
+                const { sortedRotations, lColumn, originalIndex } = data;
+                const fColumn = sortedRotations.map(rot => rot[0]).join('');
+                // Limita a exibição para não sobrecarregar o navegador com textos muito grandes
+                const displayLimit = 100;
+                const isLimited = sortedRotations.length > displayLimit;
+
+                let html = `<table class="w-full border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-200">
+                                        <th class="table-cell">Índice</th>
+                                        <th class="table-cell">F</th>
+                                        <th class="table-cell">Rotações Ordenadas ${isLimited ? `(Exibindo ${displayLimit} de ${sortedRotations.length})` : ''}</th>
+                                        <th class="table-cell">L</th>
+                                    </tr>
+                                </thead>
+                                <tbody>`;
+                const rotationsToDisplay = isLimited ? sortedRotations.slice(0, displayLimit) : sortedRotations;
+                rotationsToDisplay.forEach((rot, i) => {
+                    const isOriginal = i === originalIndex ? 'bg-yellow-100' : '';
+                    // Trunca a rotação exibida se for muito longa
+                    const displayRot = rot.length > 80 ? rot.substring(0, 77) + '...' : rot;
+                    html += `<tr class="${isOriginal}">
+                                <td class="table-cell">${i}</td>
+                                <td class="table-cell highlight-f">${fColumn[i]}</td>
+                                <td class="table-cell text-left p-2">${displayRot}</td>
+                                <td class="table-cell highlight-l">${lColumn[i]}</td>
+                             </tr>`;
+                });
+                if(isLimited) {
+                    html += `<tr><td colspan="4" class="text-center p-2 text-gray-500">... mais ${sortedRotations.length - displayLimit} linhas não exibidas ...</td></tr>`;
+                }
+                html += `</tbody></table>`;
+                bwtMatrixVis.innerHTML = html;
+            }
+
+            function renderFMIndex(data) {
+                const { cTable, occ, lColumn } = data;
+                const alphabet = [...cTable.keys()];
+                const len = lColumn.length;
+
+                // Render C-Table
+                let cTableHtml = `<table class="w-full border-collapse">
+                                    <thead><tr class="bg-gray-200"><th class="table-cell">Char</th><th class="table-cell">Início em F</th></tr></thead>
+                                    <tbody>`;
+                alphabet.forEach(char => {
+                    cTableHtml += `<tr><td class="table-cell">${char === '$' ? "'$'" : char}</td><td class="table-cell">${cTable.get(char)}</td></tr>`;
+                });
+                cTableHtml += `</tbody></table>`;
+                cTableVis.innerHTML = cTableHtml;
+
+                // Render Occ
+                let occHtml = `<table class="w-full border-collapse"><thead><tr class="bg-gray-200"><th class="table-cell">i</th>`;
+                alphabet.forEach(char => occHtml += `<th class="table-cell">Occ(${char === '$' ? "'$'" : `'${char}'`}, i)</th>`);
+                occHtml += `</tr></thead><tbody>`;
+                
+                // Limita a exibição da tabela Occ também
+                const displayLimit = 50;
+                const isLimited = len > displayLimit;
+                const rowsToDisplay = isLimited ? [...Array(displayLimit).keys()] : [...Array(len + 1).keys()];
+                
+                rowsToDisplay.forEach(i => {
+                    occHtml += `<tr><td class="table-cell">${i}</td>`;
+                    alphabet.forEach(char => {
+                       occHtml += `<td class="table-cell">${occ.get(char)[i]}</td>`;
+                    });
+                    occHtml += `</tr>`;
+                });
+
+                if(isLimited) {
+                    occHtml += `<tr><td colspan="${alphabet.length + 1}" class="text-center p-2 text-gray-500">... e mais ${len - displayLimit + 1} linhas ...</td></tr>`;
+                }
+
+                occHtml += `</tbody></table>`;
+                occVis.innerHTML = `<div class="overflow-x-auto">${occHtml}</div>`;
+            }
+            
+            function renderSearchResults(result, pattern) {
+                const { start, end } = result;
+                let html = '';
+                if (start === -1 || start >= end) {
+                    html = `<p>Padrão "<strong>${pattern}</strong>" não encontrado.</p>`;
+                } else {
+                    const count = end - start;
+                    html = `<p>Padrão "<strong>${pattern}</strong>" encontrado <strong>${count}</strong> vez(es).</p>
+                            <p>Intervalo em F: [${start}, ${end-1}]</p>`;
+                }
+                searchResultsContent.innerHTML = html;
+            }
+
+            function renderSearchSteps(data) {
+                const { steps, pattern } = data;
+                let html = `<table class="w-full border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-200">
+                                        <th class="table-cell">Passo</th>
+                                        <th class="table-cell">Char</th>
+                                        <th class="table-cell">Intervalo [Início, Fim)</th>
+                                        <th class="table-cell">C(c)</th>
+                                        <th class="table-cell">Occ(c, Início)</th>
+                                        <th class="table-cell">Occ(c, Fim)</th>
+                                        <th class="table-cell">Novo Intervalo</th>
+                                    </tr>
+                                </thead>
+                                <tbody>`;
+                
+                steps.forEach((step, i) => {
+                    const { char, prevStart, prevEnd, start, end, found } = step;
+                    const cVal = data.cTable.get(char) ?? 'N/A';
+                    const occStart = data.occ.get(char)?.[prevStart] ?? 'N/A';
+                    const occEnd = data.occ.get(char)?.[prevEnd] ?? 'N/A';
+
+                    let newIntervalText = `[${start}, ${end})`;
+                    if (!found) {
+                        newIntervalText = "Não encontrado";
+                    }
+
+                    html += `<tr>
+                                <td class="table-cell">${i + 1}</td>
+                                <td class="table-cell highlight-pattern">${char}</td>
+                                <td class="table-cell">[${prevStart}, ${prevEnd})</td>
+                                <td class="table-cell">${cVal}</td>
+                                <td class="table-cell">${occStart}</td>
+                                <td class="table-cell">${occEnd}</td>
+                                <td class="table-cell font-bold ${found ? 'text-green-600' : 'text-red-600'}">${newIntervalText}</td>
+                             </tr>`;
+                });
+
+                html += `</tbody></table>`;
+                searchStepsVis.innerHTML = html;
+            }
+
+
+            // --- Manipulador de Evento Principal ---
+            runBtn.addEventListener('click', () => {
+                const words = inputStringEl.value.trim().split('\n').filter(word => word.trim() !== '');
+                const pattern = searchPatternEl.value.trim();
+
+                if (words.length === 0) {
+                    searchResultsContent.innerHTML = `<p class="text-red-500">Por favor, insira pelo menos uma palavra.</p>`;
+                    return;
+                }
+                
+                // Concatena as palavras com '$' para formar o corpus T
+                const text = words.join('$') + '$';
+                
+                // Limpar visualizações anteriores
+                bwtMatrixVis.innerHTML = '<p class="text-gray-500">Calculando...</p>';
+                cTableVis.innerHTML = '<p class="text-gray-500">...</p>';
+                occVis.innerHTML = '<p class="text-gray-500">...</p>';
+                searchStepsVis.innerHTML = '<p class="text-gray-500">...</p>';
+
+
+                // 1. Construir BWT
+                const bwtData = buildBWT(text);
+                const { sortedRotations, lColumn } = bwtData;
+                const fColumn = sortedRotations.map(rot => rot[0]).join('');
+                renderBWTMatrix(bwtData);
+
+                // 2. Construir FM-Index
+                const { cTable, occ } = buildFMIndex(fColumn, lColumn);
+                renderFMIndex({ cTable, occ, lColumn });
+                
+                // 3. Executar busca se houver um padrão
+                if (pattern) {
+                    const { steps, result } = backwardSearch(pattern, lColumn, cTable, occ);
+                    renderSearchSteps({ steps, pattern, cTable, occ });
+                    renderSearchResults(result, pattern);
+                } else {
+                    searchResultsContent.innerHTML = '<p>Padrão de busca vazio.</p>';
+                    searchStepsVis.innerHTML = '<p class="text-gray-500">Insira um padrão para ver os passos da busca.</p>';
+                }
+            });
+            
+            // Execução inicial para popular a tela
+            runBtn.click();
+        });
+    </script>
+</body>
+</html>
